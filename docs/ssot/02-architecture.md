@@ -1,0 +1,34 @@
+# Architecture
+Status: Draft | Last updated: 2026-11-24
+
+## Fixed decisions and reasons
+- One standalone product and app instance: keeps customization in the same application.
+- One PostgreSQL database as the single source of truth: keeps business state authoritative in one place.
+- No tenant/organization identifiers or switching: the product is not multi-tenant.
+- Next.js App Router with server-side Drizzle access only: keeps database credentials and queries off the browser.
+- Supabase hosts PostgreSQL, Auth and Storage: uses the selected managed platform for persistence, identity and files.
+- Supabase Auth with server-side authorization: Phase 2 explicitly grants equal application access to every authenticated user, with no roles/permissions; validate identity using auth.getUser().
+- RLS on every table with no public policies: browser/public database access is closed.
+- Runtime transaction pooler on port 6543 with prepared statements disabled: matches the selected Supabase connection mode.
+- Migration session pooler on port 5432: separates schema tooling from transaction-pooled runtime access.
+- Vercel deployment: uses the selected Next.js hosting platform.
+- Gemini calls are server-side only: keeps provider credentials out of client bundles.
+
+## Request and data flow
+Browser -> Next.js server (Server Component, route handler or server action) -> Drizzle -> postgres.js -> Supabase PostgreSQL.
+
+Supabase Auth provides login/session identity; Next.js server code authorizes operations before database access. Supabase Storage supplies file storage; bucket and access design remain open. Instagram Graph API, WhatsApp Business Cloud API and Gemini connect through server code. Incoming webhooks must pass signature/token verification before processing.
+
+## Phase 1 implementation notes
+Phase 1 temporarily disabled Cache Components for force-dynamic. Phase 2 restores the original Cache Components and partial prefetching settings, uses await connection() for health requests, and requires authentication for the diagnostic. Auth-dependent rendering stays behind Suspense boundaries; do not cache user identity globally.
+
+Phase 2 prerender fix: the shared server Auth helper awaits connection() before entering the SDK and outside its error catch, allowing prerendering to suspend correctly before token-expiry clock reads. Profile database imports occur only after the authenticated request gate, avoiding driver initialization during protected-layout module evaluation. Suspense alone does not establish request-time execution.
+
+## Approved Phase 3A caller boundary (2026-11-24)
+Server-only business data functions accept plain input, including createLeadWithContact(input), and do not authenticate callers. Phase 3B server actions must call the existing auth helper first; Phase 8 webhooks must verify provider signatures/tokens first. No session/user-context object is passed into this shared data layer. Database initialization stays lazy. Server-only imports prevent browser bundling but are not authorization. Meta ads intake is selected for Phase 8 alongside Instagram/WhatsApp; provider API details remain open.
+
+## Open questions
+- Database runtime role and least-privilege/RLS strategy for authorized server access.
+- Storage access design and advanced session lifecycle policy; equal authenticated access and SSR cookie sessions are decided for Phase 2.
+- Deployment environments and external integration processing/retry design.
+- Long-term caching strategy after the temporary endpoint is removed.
