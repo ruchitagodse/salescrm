@@ -3,3 +3,8 @@ export { profiles } from "./profiles";
 export { companies } from "./companies";
 export { contacts } from "./contacts";
 export { leads } from "./leads";
+export { pipelineStages } from "./pipeline-stages";
+export { deals } from "./deals";
+export { activities } from "./activities";
+export { integrationEvents, integrationIdentities } from "./integrations";
+export { quotations, quotationItems, orders, orderItems, payments, expenses, quotationNumberSequence, orderNumberSequence } from "./commerce";

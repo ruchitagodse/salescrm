@@ -1,8 +1,15 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { getSupabaseConfig } from "./config";
+import { isWebhookPath } from "../webhook-security";
 
 export async function updateSession(request: NextRequest) {
+  // These exact provider endpoints authenticate inside their route handlers.
+  if (isWebhookPath(request.nextUrl.pathname)) {
+    const webhook = NextResponse.next({ request });
+    webhook.headers.set("Cache-Control", "no-store");
+    return webhook;
+  }
   let response = NextResponse.next({ request });
 
   try {

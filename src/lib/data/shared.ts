@@ -11,14 +11,16 @@ export type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 type Reader = Pick<Database, "select" | "execute">;
 
 export class DataError extends Error {
-  constructor(public readonly code: "INVALID_INPUT" | "NOT_FOUND" | "CONFLICT" | "IDENTITY_CONFLICT" | "INVALID_REFERENCE" | "RETRY" | "DATABASE_ERROR") {
+  constructor(public readonly code: "INVALID_INPUT" | "NOT_FOUND" | "CONFLICT" | "IDENTITY_CONFLICT" | "INVALID_REFERENCE" | "RETRY" | "DATABASE_ERROR" | "INVALID_STATE" | "OVERPAYMENT") {
     super({
       INVALID_INPUT: "Invalid input.", NOT_FOUND: "Record not found.",
-      CONFLICT: "A contact with these details already exists.",
+      CONFLICT: "A record with these details already exists.",
       IDENTITY_CONFLICT: "Phone and email match different contacts; manual resolution is required.",
       INVALID_REFERENCE: "The linked record is unavailable.",
       RETRY: "The record changed concurrently. Please retry.",
       DATABASE_ERROR: "Unable to complete the operation.",
+      INVALID_STATE: "This operation is not allowed in the record's current state.",
+      OVERPAYMENT: "Payment exceeds the order's remaining balance.",
     }[code]);
   }
 }
@@ -87,6 +89,7 @@ export async function requireLiveContact(tx: Reader, contactId: string) {
   if (!row) throw new DataError("INVALID_REFERENCE");
 }
 
-export function toLeadDTO<T extends { budgetPaise: bigint | null }>(row: T) {
-  return { ...row, budgetPaise: row.budgetPaise?.toString() ?? null };
+export function toLeadDTO<T extends { budgetPaise: bigint | null }>(row: T): Omit<T, "budgetPaise"> & { budgetPaise: string | null } {
+  const { budgetPaise, ...rest } = row;
+  return { ...rest, budgetPaise: budgetPaise?.toString() ?? null };
 }

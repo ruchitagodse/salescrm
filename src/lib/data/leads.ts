@@ -11,6 +11,7 @@ import {
   all, found, lockContactKeys, normalizedFields, omitUndefined, requireLiveCompany,
   requireLiveContact, searchPattern, toLeadDTO, validate, withData,
 } from "./shared";
+import type { Transaction } from "./shared";
 
 export async function createLead(input: unknown) {
   return withData(async (db) => {
@@ -84,10 +85,13 @@ export async function listLeads(input: unknown = {}) {
 }
 
 export async function createLeadWithContact(input: unknown) {
-  return withData(async (db) => {
+  return withData(db => db.transaction(tx => createEnquiryInTransaction(tx,input)));
+}
+
+// Internal transaction seam: webhook replay marker and enquiry commit together.
+export async function createEnquiryInTransaction(tx: Transaction, input: unknown) {
     const { contact: incoming, lead } = validate(createLeadWithContactSchema, input);
     const normalized = normalizedFields(incoming);
-    return db.transaction(async (tx) => {
       await lockContactKeys(tx, normalized.phoneNormalized, normalized.emailNormalized);
       const keys = [
         normalized.phoneNormalized ? eq(contacts.phoneNormalized, normalized.phoneNormalized) : undefined,
@@ -121,6 +125,4 @@ export async function createLeadWithContact(input: unknown) {
         convertedAt: convertedAtForStatus(null, null, lead.status, new Date()),
       }).returning();
       return { lead: toLeadDTO(found(createdLead)), contact, reusedContact: Boolean(matchId) };
-    });
-  });
 }
