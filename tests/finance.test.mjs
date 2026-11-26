@@ -1,9 +1,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { calculateItems, canChangeQuotation, documentReference, MAX_PAISE, QUOTATION_STATUSES, receiptFits } from "../src/lib/finance-values.ts";
+import { calculateItems, quotationTotals, canChangeQuotation, documentReference, MAX_PAISE, QUOTATION_STATUSES, receiptFits } from "../src/lib/finance-values.ts";
 import { expenseInputSchema, paymentInputSchema, quotationInputSchema, voidInputSchema } from "../src/lib/finance-validation.ts";
 const id = "1d79eb24-a7cc-4ce3-90ae-67cb5724b956";
 const item = { description: "Website", quantity: 2, unitPricePaise: BigInt("12500050") };
+test('fixed quotation adjustments and milestone sums retain exact paise',()=>{
+ assert.equal(quotationTotals(10000n,1000n,1800n,[{label:'Advance',amountPaise:'5400'},{label:'Final',amountPaise:'5400'}]),10800n);
+ assert.equal(quotationTotals(900719925474099300n,1n,2n),900719925474099301n);
+ assert.throws(()=>quotationTotals(100n,101n,0n));assert.throws(()=>quotationTotals(100n,0n,1n,[{label:'Final',amountPaise:'100'}]));
+ assert.throws(()=>quotationTotals(MAX_PAISE,0n,1n));
+});
 test("line totals and document totals are exact paise, including above JS safe integer", () => {
   const result = calculateItems([item, { description: "Hosting", quantity: 1, unitPricePaise: BigInt("9007199254740993") }]);
   assert.equal(result.lines[0].lineTotalPaise, BigInt("25000100"));
@@ -23,7 +29,7 @@ test("calculated lines are copies and cannot change when the input is edited", (
   assert.equal(snapshot.totalPaise, BigInt("25000100"));
 });
 test("quotation transition matrix freezes accepted documents", () => {
-  const allowed = ["draft:sent", "sent:accepted", "sent:rejected", "rejected:draft"];
+  const allowed = ["draft:sent", "sent:accepted", "sent:rejected", "draft:expired", "sent:expired"];
   for (const from of QUOTATION_STATUSES) for (const to of QUOTATION_STATUSES) assert.equal(canChangeQuotation(from, to), allowed.includes(`${from}:${to}`));
 });
 test("references pad without truncating larger sequence numbers", () => {
@@ -38,10 +44,11 @@ test("partial receipt checks allow exact settlement and reject overpayment/negat
   assert.equal(receiptFits(BigInt(0), BigInt(0), BigInt(1)), false);
   assert.equal(receiptFits(MAX_PAISE, MAX_PAISE - BigInt(1), BigInt(1)), true);
 });
-test("quotation schema excludes caller totals, tax/discount fields and non-whole quantities", () => {
+test("quotation schema excludes caller totals/rates and non-whole quantities", () => {
   const value = { title: " Website ", dealId: id, items: [{ description: "Website", quantity: "2", unitPricePaise: "100" }] };
   assert.equal(quotationInputSchema.parse(value).items[0].unitPricePaise, BigInt(100));
-  for (const extra of [{ totalPaise: "1" }, { gst: "18" }, { discountPaise: "10" }, { status: "accepted" }]) assert.equal(quotationInputSchema.safeParse({ ...value, ...extra }).success, false);
+  for (const extra of [{ totalPaise: "1" }, { gst: "18" }, { status: "accepted" }]) assert.equal(quotationInputSchema.safeParse({ ...value, ...extra }).success, false);
+  assert.equal(quotationInputSchema.safeParse({...value,discountPaise:'10',taxPaise:'5'}).success,true);
   for (const quantity of ["1.5", "1e3", 1.5, "0", "1000001"]) assert.equal(quotationInputSchema.safeParse({ ...value, items: [{ ...value.items[0], quantity }] }).success, false);
 });
 test("receipts/expenses require positive exact amounts and valid dates; voiding requires a reason", () => {

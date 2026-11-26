@@ -1,0 +1,35 @@
+# Quotation workflow and configuration
+
+Updated 2026-11-26. This is the implemented workflow, not a claim that SMTP/WhatsApp or authenticated browser flows have been exercised.
+
+Create a quotation from an existing lead or deal. Add whole-number quantities and INR unit prices. Discount and tax are fixed INR amounts; no GST percentage engine is provided. Total is item subtotal minus discount plus tax, calculated with integer paise. If payment milestones are supplied, each is positive and their sum must equal the final total. Add project description, validity, terms and notes as needed. Drafts can be edited; create a revised draft for a previously sent/rejected/expired/accepted quotation so its old content and PDFs remain intact. Revisions receive a new quotation number and history links.
+
+Generate/retrieve a PDF version on the quotation detail page. Identical snapshot content reuses its version; changed draft/client/branding content creates another immutable version. Preview and Download use authenticated private routes. The stored snapshot includes client/company details and exact item/adjustment/milestone values; old PDF bytes are never replaced. Records, hashes and PDFs live in PostgreSQL with RLS, no public policies and a 5 MiB document cap. No public storage bucket or third-party PDF service is needed. Historical versions and the exact PDF attached to each sending attempt stay linked in the detail page.
+
+The template uses PROSPERA Digital Solutions, the supplied website and sign-off Ruchita Godse. Address/public email/phone are omitted until confirmed. Set confirmed public values through `QUOTATION_BUSINESS_ADDRESS`, `QUOTATION_PUBLIC_EMAIL` and `QUOTATION_PUBLIC_PHONE`; do not put private credentials in those fields. Supplied older/unverified contact details and an unverified legal-business name were not published. Noto Sans fonts are bundled under their OFL license; generation needs no runtime font download.
+
+## Gmail SMTP
+
+Privately configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD` in ignored server environment configuration or Vercel environment variables. Port 465 uses implicit TLS; 587 requires TLS upgrade. Use the intended Gmail account's supported authentication/app-password setup. Rotate the credential shared in chat before storing a replacement; the implementation did not copy it into any file. `CONTACT_TO_EMAIL` is not used for quotation delivery: each send uses the confirmed client recipient. The sender address comes from the SMTP account. Missing configuration is shown in the app while PDF download remains available.
+
+Select/edit the client's prefilled email and explicitly confirm sending. Only a successful SMTP acknowledgement accepting that recipient marks the attempt accepted and the quotation Sent. The actual response and message ID are recorded. SMTP acceptance does not prove inbox delivery, reading, or absence of a later bounce. Gmail delivery/bounce reporting is not implemented, so email delivery stays unconfirmed rather than fabricated.
+
+## WhatsApp Business
+
+Privately configure `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID` and `META_GRAPH_API_VERSION`, plus the existing verified webhook setup for session/status events. The adapter uploads the PDF as media and submits a supported document message. It uses free-form document sending only when a verified inbound event exists for that account/recipient in the last 24 hours. Otherwise configure `WHATSAPP_QUOTATION_TEMPLATE` and `WHATSAPP_TEMPLATE_LANGUAGE` for a provider-approved document-header template with no variable body parameters. Owner provisioning/approval/recipient eligibility must match the intended account and template; OS does not provision them or implement unsupported WhatsApp automation.
+
+The actual returned message ID/selected response fields establish submission acceptance. Sent/delivered/read/failed delivery status is updated only from HMAC-verified callbacks correlated to the same account/message ID, with confirmed delivery/read protected from older regressions. No phone/SMS automation or agent-sent test messages are included. A missing configuration/session/template is shown as unavailable or a clear error; the PDF remains downloadable.
+
+## Unknown outcomes and history
+
+Pending/unknown external sends freeze the source quote and block a second same-recipient/channel submission until reconciliation. This avoids modifying an attachment while it is in flight or blindly sending it twice. Client acknowledgement timeout is not cancellation. Check sending history and provider records using the attempt/message ID and exact attempt PDF; do not create another send merely because an acknowledgement was lost. Failed attempts can be explicitly restarted after correction; there is no automatic external retry. Unknown/pending outcomes require owner reconciliation against actual provider evidence; a provider-reconciliation UI/worker is not included. Nothing marks Delivered based solely on a click or a successful upload.
+
+Draft/Sent/Accepted/Rejected/Expired states are supported. Expiration is an explicit action after the validity date passes, and expired quotations cannot be submitted. There is no expiration scheduler. New Sent transitions require recorded provider acceptance; legacy manually-Sent records are preserved and identified when no provider history exists. Status changes and revisions are retained in history. Accepted quotations create the existing immutable order snapshot, including tax/discount adjustments; existing records default to zero adjustments and retain their old totals.
+
+## Development and verification boundaries
+
+Restart an already-running development server to pick up new pool settings and environment configuration. Static TypeScript/lint/build checks, the existing unit suite and sanitized DB foundation checks are recorded in SSOT 08. Synthetic PDF visual QA used only sample data in ignored `tmp/pdfs`; it did not insert dummy records into the business database or send messages. Authenticated form interaction, actual production latency, real Gmail/WhatsApp acceptance/delivery and provider account setup remain for owner review. No Vercel project link/CLI/log connector was available to establish the historical five-minute incident cause. New slow-operation diagnostics log durations only.
+
+The dashboard remains a separate phase. Existing cash/net-cash analytics must not be mislabeled accounting profit; monthly deal closures, service/source attribution, quotation revision counting and stale-contact definitions need agreement before dashboard implementation.
+
+References: [Nodemailer SMTP options](https://nodemailer.com/smtp.html), [Nodemailer error semantics](https://nodemailer.com/errors), [Meta-owned document message reference](https://www.postman.com/meta/whatsapp-business-platform/request/zjtbdpz/send-document-message-by-id), [Meta WhatsApp overview](https://developers.facebook.com/documentation/business-messaging/whatsapp/overview), [Noto Sans source](https://github.com/google/fonts/tree/main/ofl/notosans).

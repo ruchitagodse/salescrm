@@ -18,6 +18,8 @@
     "drizzle-orm": "^0.45.4",
     "libphonenumber-js": "^1.13.17",
     "next": "16.4.6",
+    "nodemailer": "^10.6.1",
+    "pdfkit": "^0.21.0",
     "postgres": "^4.1.1",
     "react": "19.3.0",
     "react-dom": "19.3.0",
@@ -28,6 +30,8 @@
   },
   "devDependencies": {
     "@types/node": "^20",
+    "@types/nodemailer": "^8.0.2",
+    "@types/pdfkit": "^0.17.7",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "dotenv": "^18.0.10",
