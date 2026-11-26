@@ -1,5 +1,5 @@
 # Proposed data model
-Status: Approved (Phase 3A entities only; later entities remain proposed) | Last updated: 2026-11-24
+Status: Approved (through Phase 6; later entities remain proposed) | Last updated: 2026-11-26
 
 High-level proposals only. No column-level design or tables are implemented in Phase 1. Relationship cardinality and required/optional links remain to be decided in each phase.
 
@@ -8,17 +8,24 @@ Phase 2 adds the approved profiles foundation only: a profile belongs to one Sup
 - **Contacts — Approved, Phase 3A.** People with required full_name and at least one of phone/email/instagram_handle; optional company, city and plain-text notes. Stored normalized phone/email support live-contact uniqueness and enquiry matching. One contact may have many leads.
 - **Companies — Approved, Phase 3A.** Required name, optional website, industry, city and notes. One company may have many contacts; duplicate names warn without blocking.
 - **Leads — Approved, Phase 3A.** Require a contact and source; status defaults new. Include entry_method (manual/integration, default manual), nullable source_detail, service_needs, requirement, optional date-only deadline, bigint INR budget_paise, lost_reason, converted_at and notes. Sources include meta_ads. Phase 3 entry is manual; Meta ads, Instagram and WhatsApp intake belongs to Phase 8. Status/source/entry-method sets and lost checks follow 04-data-conventions.md. Converted does not create/link a deal in Phase 3.
-- **Pipeline stages — Proposed, finalized in its phase.** Sales progress definitions; relate to deals.
-- **Deals — Proposed, finalized in its phase.** Sales opportunities; relate to leads, contacts/companies, stages, activities and quotations.
-- **Activities — Proposed, finalized in its phase.** Sales actions and follow-ups; relate to relevant leads, contacts or deals.
-- **Quotations — Proposed, finalized in its phase.** Commercial proposals; relate to deals/clients and resulting orders.
-- **Orders — Proposed, finalized in its phase.** Accepted business commitments; relate to quotations/clients and payments.
-- **Payments — Proposed, finalized in its phase.** Business receipts; relate to orders/clients for financial reporting.
-- **Expenses — Proposed, finalized in its phase.** Business costs supporting financial analytics; any client/order allocation remains open.
-- **Integration messages — Proposed, finalized in its phase.** Instagram/WhatsApp interactions relevant to lead intake; may relate to leads, contacts and follow-up activities.
+- **Pipeline stages — Approved, Phase 4.** Discovery, Proposal, Negotiation in that order; stage UUIDs are referenced by deals. Fixed seed data, without a stage-management UI.
+- **Deals — Approved, Phase 4.** At most one per lead, created by explicit transactional conversion. Title, lead/contact link (contact derived from lead), stage, nullable INR paise value, expected close date, open/won/lost outcome, loss reason and notes. Won/lost are outcomes, not stages. Activities link to deals in Phase 5; quotations remain Phase 6.
+- **Activities — Approved, Phase 5 (2026-11-25).** Call, Meeting, Task, Follow-up; Planned, Completed, Cancelled. Title, exactly one primary contact/lead/deal, required due date/time (Asia/Kolkata display/input), notes and server-maintained completion timestamp. In-app Today/Upcoming/Overdue/Completed views. Automated notifications and recurrence deferred. Existing UUID/timestamp/RLS/soft-delete rules apply. No assignee/role changes.
+- **Quotations — Approved, Phase 6.** Deal-linked proposals with description/positive-whole-number quantity/INR unit-price items. Draft, Sent, Accepted, Rejected. Server calculates totals; GST and discounts excluded. Draft items are editable; accepted quotations are frozen. Sent is a manual record status, not email dispatch.
+- **Orders — Approved, Phase 6.** Explicit conversion of an accepted quotation, at most one order per quotation (including archived orders). Frozen title/customer/prices/line-item snapshots. No independent order creation or post-conversion price editing. Payment state is derived from valid receipts, not a separate mutable lifecycle.
+- **Payments — Approved, Phase 6.** Manual positive receipts against an order, including partial payments. Transactional overpayment prevention. Recorded amounts cannot be edited; reason-required voiding removes them from valid receipt totals while retaining history. No gateway charges or refunds.
+- **Expenses — Approved, Phase 6.** Independent date/payee/category/positive INR amount/notes cost records. Immutable recorded amount, reason-required voiding. No allocation to a client/order in this phase.
+- **Integration events/identities — Approved, Phase 8.** Normalized inbound events link to automatically created leads; account-scoped sender identities prevent repeated lead creation. No automatic follow-up activity is created. See Phase 8 foundation below.
 
 ## Open questions
 - Later entity boundaries/lifecycles/cardinalities. Phase 3A has no ownership/assignment fields; later assignment requirements remain undecided.
-- Whether quotation/order line items or additional integration entities are required; profiles are decided in Phase 2.
-- Payment allocation and expense attribution rules.
-- Integration-created lead attribution: provider identifiers, campaign/ad/form mapping, and how source_detail is populated (Phase 8).
+- Additional integration entities remain undecided; profiles and quotation/order line items are finalized through Phase 6.
+- Multi-order receipt allocation, refunds and expense attribution remain future questions. Phase 6 receipts each reference one order; expenses are independent.
+- Phase 6 approved on 2026-11-25: whole-number item quantities, frozen order snapshots, partial receipts without overpayment, independent expenses and reason-required voiding. GST and discounts explicitly excluded. Future tax/discount/refund policy, invoice/fiscal numbering and export/delivery remain open.
+- Custom campaign/form-answer mapping beyond the explicit Phase 8 provider event/ad/form identifiers and standard contact fields; retention/erasure policy.
+
+## Phase 8 integration foundation (Approved 2026-11-26)
+Integration events retain bounded normalized inbound content and provider identifiers, processing state/safe error code and an optional linked lead; no raw webhook JSON, credentials or media URLs. Integration identities map each account-scoped Instagram/WhatsApp sender to its first lead. Both use UUID/defaults, shared timestamps, deleted_at, RLS with no policies and updated_at triggers. Unconditional uniqueness preserves replay/identity protection even for archived records. FK references use RESTRICT. Events can be retried by an authenticated user after correcting setup/data conflicts; retries use stored identifiers and never bypass idempotency. Meta lead form details are retrieved server-side after signature/account validation. Instagram profile lookup must supply an actual username before creating a contact when no existing identity is available; unavailable profile data stays for review. WhatsApp phone identifiers are normalized normally; unsupported opaque-only identities stay for review. First-message refers to first successfully processed inbound event; out-of-order delivery does not reconstruct historical first-message order.
+
+## Phase 9 analyst read model (2026-11-26)
+No tables/migration or report history. Aggregate snapshot has asOf/start/end and allowlisted fact objects (fixed ID/label/scope/unit, exact decimal-string value). Selected-period and current-all-time scopes remain separate. Individual outstanding-order rows/customer data, record IDs, notes/messages and other free text never enter Gemini context. Structured advisory output contains bounded observations/recommendations with known evidence IDs and limitations; it is not authoritative business state. Generation does not create/update CRM or follow-up records. Provider retention is outside OS report persistence and must be reviewed in account terms.

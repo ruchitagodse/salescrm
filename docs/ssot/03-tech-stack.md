@@ -20,12 +20,12 @@ Declared ranges come from package.json; exact installed versions were read from 
 - @types/react and @types/react-dom: React types; declared `^19`, installed `19.3.0` each.
 
 ## Selected, not installed/configured by Phase 1
-- Meta ads lead intake — Approved new scope, 2026-11-24; selected for Phase 8, not installed/implemented. API version, SDK choice, permissions and app review remain undecided.
+- Meta ads lead intake — Phase 8 server adapter implemented using native fetch; explicit Graph version/configuration and live provider acceptance required.
 - Supabase: PostgreSQL hosting, Auth and Storage. Hosting region/health/free-plan claims are user-provided and not independently verified. Server/SDK version not established.
-- Recharts: charts; not installed.
-- Gemini API: server-side business analysis; SDK/model/version undecided.
-- Instagram Graph API: lead integration; API version undecided.
-- WhatsApp Business Cloud API: lead integration; API version undecided.
+- Recharts: installed for Phase 7 charts; see versions below.
+- Gemini API: Phase 9 server-side REST analyst implemented; explicit model/key configuration and live acceptance pending.
+- Instagram Graph API: Phase 8 inbound adapter and sender profile lookup implemented for Instagram Login; explicit Graph version/configuration required.
+- WhatsApp Business Cloud API: Phase 8 inbound callback adapter implemented; outbound messaging is excluded.
 - Vercel: deployment; not configured or tested here.
 
 ## Initial Phase 2 dependency state (historical)
@@ -49,5 +49,14 @@ Node observed locally: `24.20.0`; this is an observation, not a production versi
 Server-only Drizzle/postgres.js client, health route, empty schema module, dotenv-backed Drizzle config and db:generate/db:migrate/db:studio scripts are implemented. No packages were installed and the pre-existing lockfile changes were preserved. The dev route runs and PostgreSQL rejects authentication (`28P01`); a successful DB query is not verified. Generation is blocked by sandbox process spawning and the build by starter Google font fetching; escalation retries for those checks were rejected. See 08-build-plan.md for check results. Supabase connectivity success, project region/health/plan, Auth, Storage and deployment are not independently established.
 
 ## Open questions
-- Versions/SDKs for future integrations, Recharts and Supabase Auth/Storage.
+- Versions/SDKs for future integrations and Supabase Storage.
 - Supported production Node.js version and dependency upgrade policy.
+
+## Phase 7 dependencies (2026-11-26)
+Recharts 3.11.1 (^3.11.1) and react-is 19.3.1 (^19.3.1) installed; package-lock synchronized. Installation initially hit restricted cache access, then succeeded with authorized network access. Recharts is used only in the client chart leaf; authenticated server aggregates pass decimal-string DTOs. [Official installation guide](https://recharts.github.io/en-US/guide/installation/). Existing React/Next versions are unchanged.
+
+## Phase 8 integration adapters (2026-11-26)
+No additional package dependency. Native server fetch, node:crypto HMAC/timingSafeEqual, existing Zod/Drizzle/postgres.js support inbound leadgen, Instagram Login messages/profile retrieval and WhatsApp Cloud API messages. The Graph version is required configuration rather than a guessed default; API host/token/login variants are not interchangeable. Provider app permissions, access levels, asset subscriptions and production review are manual and unverified. Primary provider references and current setup instructions are linked in docs/integrations/meta-setup.md; no provider SDK or outbound API is installed. Earlier not-implemented observations above are historical.
+
+## Phase 9 Gemini adapter (2026-11-26)
+No new dependency/SDK: native server fetch and existing Zod validate Gemini structured JSON and evidence references. GEMINI_MODEL is explicit private configuration, with no hardcoded/guessed model default. generateContent v1beta REST remains documented; the current API discovery document supplies generationConfig.responseFormat.text (mimeType APPLICATION_JSON and schema), replacing deprecated schema-format fields. Server-only wrapper keeps production calls off the browser. Current primary references/model/billing acceptance steps are in docs/ai-analyst-setup.md; no real key/model call was performed by automated checks.

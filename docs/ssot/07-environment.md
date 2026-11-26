@@ -1,5 +1,5 @@
 # Environment
-Status: Approved | Last updated: 2026-11-24
+Status: Approved | Last updated: 2026-11-26
 
 Names and purposes only; never record values.
 
@@ -17,8 +17,21 @@ Set required server environment variables in Vercel rather than committing files
 
 Set both public Supabase Auth variables locally and in the appropriate Vercel environment before building. Public configuration is embedded in browser bundles at build time. Owner creates accounts in the Supabase dashboard and reports public sign-ups already disabled there. No signup endpoint or admin credential is added to OS.
 
-Storage, Gemini, Instagram and WhatsApp configuration remains for future phases. No .env.local contents are inspected or printed; framework/tooling loads required names internally. Never invent credentials or place secrets in NEXT_PUBLIC_ variables.
+Storage configuration remains for a future phase; Phase 8 integration and Phase 9 Gemini names are documented below. No .env.local contents are inspected or printed; framework/tooling loads required names internally. Never invent credentials or place secrets in NEXT_PUBLIC_ variables.
 
 ## Open questions
-- Future Storage/integration variable names and credential lifecycle.
+- Future Storage variable names and provider credential lifecycle/rotation; Gemini names are finalized below.
 - Local/preview/production database separation and migration execution workflow.
+
+## Phase 8 server-only names (2026-11-26)
+Each channel is optional and disabled unless all its required values are present. Never use NEXT_PUBLIC_ for these names, and do not share their values in chat. Existing environment contents are not inspected.
+- META_ADS_APP_SECRET, META_ADS_VERIFY_TOKEN, META_ADS_PAGE_ID, META_ADS_PAGE_ACCESS_TOKEN: lead-form callback signing/verification, one allowed Page and lead retrieval credential.
+- INSTAGRAM_APP_SECRET, INSTAGRAM_VERIFY_TOKEN, INSTAGRAM_ACCOUNT_ID, INSTAGRAM_ACCESS_TOKEN: Instagram Login professional-account callback verification, account allowlist and scoped-user profile lookup. Facebook Login/Unified Login variants are not assumed interchangeable; this implementation uses graph.instagram.com.
+- WHATSAPP_APP_SECRET, WHATSAPP_VERIFY_TOKEN, WHATSAPP_PHONE_NUMBER_ID: Cloud API callback verification and one allowed phone-number ID; inbound-only requires no outbound access token in OS.
+- META_GRAPH_API_VERSION: explicit supported version in vNN.N form for Graph retrieval; no unverified default. Set the same tested subscription version in the provider dashboard. Credential provisioning/expiry/rotation and permissions remain manual.
+Only required-name/presence booleans may be displayed by setup checks; never values. Channels disabled by missing configuration return generic unavailable responses. Accounts/app products may use different app secrets; the route reads the corresponding channel secret.
+
+## Phase 9 server-only names (2026-11-26)
+- GEMINI_API_KEY: private Gemini Developer API key, supplied only through the server request header. Never NEXT_PUBLIC_, browser code, URL queries, logs or committed files.
+- GEMINI_MODEL: explicit available Gemini model identifier supporting generateContent structured JSON output. No guessed model/version default; validate its identifier before constructing the fixed provider URL.
+Missing/invalid configuration disables generation while allowing aggregate preview. Presence checks print names/booleans only. Owner verifies the selected provider project's billing/quota, applicable data terms and permissions before using real business data. No provider data-retention or training guarantee is implied by OS; review the provider's current account terms. No automatic key provisioning, quota changes or paid calls are performed by checks.
