@@ -3,12 +3,14 @@ import "server-only";
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { getSupabaseConfig } from "./config";
+import { authFetch } from "../request-timeout";
 
 export async function createClient() {
   const cookieStore = await cookies();
   const { url, anonKey } = getSupabaseConfig();
 
   return createServerClient(url, anonKey, {
+    global: { fetch: authFetch },
     cookies: {
       getAll() {
         return cookieStore.getAll();

@@ -1,15 +1,20 @@
 import { sql } from "drizzle-orm";
-import { bigint, check, date, index, integer, pgSequence, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { bigint, check, date, index, integer, jsonb, pgSequence, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { FINANCIAL_STATUSES, QUOTATION_STATUSES } from "../../lib/finance-values";
 import { id, createdAt, updatedAt, deletedAt, paise } from "./columns";
 import { deals } from "./deals";
+import { leads } from "./leads";
 const stamps = () => ({ createdAt: createdAt(), updatedAt: updatedAt(), deletedAt: deletedAt() });
 const values = (set: readonly string[]) => sql.join(set.map((v) => sql.raw(`'${v}'`)), sql`, `);
 export const quotationNumberSequence = pgSequence("quotation_number_seq");
 export const orderNumberSequence = pgSequence("order_number_seq");
 export const quotations = pgTable("quotations", {
   id: id(), number: bigint("number", { mode: "bigint" }).notNull().unique().default(sql`nextval('public.quotation_number_seq')`),
-  title: text("title").notNull(), dealId: uuid("deal_id").notNull().references(() => deals.id, { onDelete: "restrict" }),
+  title: text("title").notNull(), dealId: uuid("deal_id").references(() => deals.id, { onDelete: "restrict" }),
+  leadId:uuid('lead_id').references(()=>leads.id,{onDelete:'restrict'}),
+  description:text('description'),validUntil:date('valid_until',{mode:'string'}),paymentTerms:text('payment_terms'),
+  discountPaise:paise('discount_paise').notNull().default(sql`0`),taxPaise:paise('tax_paise').notNull().default(sql`0`),
+  milestones:jsonb('milestones').$type<{label:string;amountPaise:string}[]>().notNull().default(sql`'[]'::jsonb`),
   status: text("status", { enum: QUOTATION_STATUSES }).notNull().default("draft"), totalPaise: paise("total_paise").notNull(), notes: text("notes"), ...stamps(),
 }, (t) => [check("quotations_number_check", sql`${t.number} > 0`), check("quotations_status_check", sql`${t.status} in (${values(QUOTATION_STATUSES)})`), check("quotations_total_check", sql`${t.totalPaise} >= 0`), check("quotations_title_check", sql`nullif(btrim(${t.title}),'') is not null`), index("quotations_deal_idx").on(t.dealId)]).enableRLS();
 export const quotationItems = pgTable("quotation_items", {
@@ -20,6 +25,7 @@ export const quotationItems = pgTable("quotation_items", {
 export const orders = pgTable("orders", {
   id: id(), number: bigint("number", { mode: "bigint" }).notNull().unique().default(sql`nextval('public.order_number_seq')`),
   quotationId: uuid("quotation_id").notNull().unique().references(() => quotations.id, { onDelete: "restrict" }),
+  discountPaise:paise('discount_paise').notNull().default(sql`0`),taxPaise:paise('tax_paise').notNull().default(sql`0`),
   title: text("title").notNull(), customerName: text("customer_name").notNull(), totalPaise: paise("total_paise").notNull(), notes: text("notes"), ...stamps(),
 }, (t) => [check("orders_number_check", sql`${t.number} > 0`), check("orders_text_check", sql`nullif(btrim(${t.title}),'') is not null and nullif(btrim(${t.customerName}),'') is not null`), check("orders_total_check", sql`${t.totalPaise} >= 0`)]).enableRLS();
 export const orderItems = pgTable("order_items", {

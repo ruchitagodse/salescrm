@@ -1,7 +1,7 @@
 import "server-only";
 
 import { randomUUID } from "node:crypto";
-import { asc, count, desc, eq, ilike, isNull, or } from "drizzle-orm";
+import { asc, count, desc, eq, ilike, isNull, or, sql } from "drizzle-orm";
 import { contacts, leads } from "@/db/schema";
 import { contactFillPatch, convertedAtForStatus, selectContactMatch } from "@/lib/contact-merge";
 import {
@@ -84,12 +84,26 @@ export async function listLeads(input: unknown = {}) {
   });
 }
 
-export async function createLeadWithContact(input: unknown) {
-  return withData(db => db.transaction(tx => createEnquiryInTransaction(tx,input)));
+export async function createLeadWithContact(input: unknown, submissionId?: string) {
+  if (submissionId) validate(entityIdSchema,submissionId);
+  return withData(db => db.transaction(async tx => {
+    await tx.execute(sql`set local statement_timeout='10s'`);
+    await tx.execute(sql`set local lock_timeout='3s'`);
+    if (submissionId) {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`lead-submit:${submissionId}`},0))`);
+      const [existing] = await tx.select().from(leads).where(eq(leads.id,submissionId));
+      if (existing) {
+        if (existing.deletedAt) throw new Error('Submission already saved and archived');
+        const [contact] = await tx.select().from(contacts).where(eq(contacts.id,existing.contactId));
+        return {lead:toLeadDTO(existing),contact:found(contact),reusedContact:true};
+      }
+    }
+    return createEnquiryInTransaction(tx,input,submissionId);
+  }));
 }
 
 // Internal transaction seam: webhook replay marker and enquiry commit together.
-export async function createEnquiryInTransaction(tx: Transaction, input: unknown) {
+export async function createEnquiryInTransaction(tx: Transaction, input: unknown, submissionId?: string) {
     const { contact: incoming, lead } = validate(createLeadWithContactSchema, input);
     const normalized = normalizedFields(incoming);
       await lockContactKeys(tx, normalized.phoneNormalized, normalized.emailNormalized);
@@ -121,7 +135,7 @@ export async function createEnquiryInTransaction(tx: Transaction, input: unknown
         contact = found(created);
       }
       const [createdLead] = await tx.insert(leads).values({
-        id: randomUUID(), contactId: contact.id, ...lead,
+        id: submissionId ?? randomUUID(), contactId: contact.id, ...lead,
         convertedAt: convertedAtForStatus(null, null, lead.status, new Date()),
       }).returning();
       return { lead: toLeadDTO(found(createdLead)), contact, reusedContact: Boolean(matchId) };

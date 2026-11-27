@@ -34,6 +34,7 @@ export function validate<T>(schema: z.ZodType<T>, value: unknown): T {
 // Trusted server callers must authenticate users or verify webhook signatures
 // before invoking any data function. This reusable layer performs no auth.
 export async function withData<T>(operation: (db: Database) => Promise<T>): Promise<T> {
+  const started=performance.now();
   try {
     const { db } = await import("@/db");
     return await operation(db);
@@ -54,6 +55,9 @@ export async function withData<T>(operation: (db: Database) => Promise<T>): Prom
     // Do not propagate driver error messages, SQL parameters or raw causes.
     console.error("Business data operation failed.", { codes });
     throw new DataError("DATABASE_ERROR");
+  } finally {
+    const durationMs=Math.round(performance.now()-started);
+    if(durationMs>1500)console.info('CRM data operation slow',{durationMs});
   }
 }
 

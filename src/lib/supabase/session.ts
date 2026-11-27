@@ -2,6 +2,7 @@ import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { getSupabaseConfig } from "./config";
 import { isWebhookPath } from "../webhook-security";
+import { authFetch, boundedAuthRead } from "../request-timeout";
 
 export async function updateSession(request: NextRequest) {
   // These exact provider endpoints authenticate inside their route handlers.
@@ -15,6 +16,7 @@ export async function updateSession(request: NextRequest) {
   try {
     const { url, anonKey } = getSupabaseConfig();
     const supabase = createServerClient(url, anonKey, {
+      global: { fetch: authFetch },
       cookies: {
         getAll: () => request.cookies.getAll(),
         setAll(cookiesToSet: { name: string; value: string; options: CookieOptions }[]) {
@@ -32,7 +34,7 @@ export async function updateSession(request: NextRequest) {
       },
     });
 
-    const { data, error } = await supabase.auth.getUser();
+    const { data, error } = await boundedAuthRead(supabase.auth.getUser());
     if ((error || !data.user) && request.nextUrl.pathname !== "/login") {
       const loginUrl = request.nextUrl.clone();
       loginUrl.pathname = "/login";

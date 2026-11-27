@@ -7,4 +7,5 @@ export { pipelineStages } from "./pipeline-stages";
 export { deals } from "./deals";
 export { activities } from "./activities";
 export { integrationEvents, integrationIdentities } from "./integrations";
+export {quotationDocuments,quotationDeliveries,quotationHistory} from './quotation-documents';
 export { quotations, quotationItems, orders, orderItems, payments, expenses, quotationNumberSequence, orderNumberSequence } from "./commerce";

@@ -26,12 +26,21 @@ export async function activitiesReady() {
     return row.ready;
   });
 }
-export async function createActivity(input: unknown) {
+export async function createActivity(input: unknown, submissionId?: string) {
   return withData(async (db) => {
     const values = validate(createActivitySchema, input);
+    if (submissionId) validate(entityIdSchema, submissionId);
     return db.transaction(async (tx) => {
+      await tx.execute(sql`set local statement_timeout='10s'`);
+      await tx.execute(sql`set local lock_timeout='3s'`);
+      if (submissionId) {
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`activity-submit:${submissionId}`},0))`);
+        const [existing] = await tx.select().from(activities).where(eq(activities.id,submissionId));
+        if (existing) { if (existing.deletedAt) throw new DataError('CONFLICT'); return existing; }
+      }
       await requireTarget(tx, values.targetType, values.targetId);
       const [row] = await tx.insert(activities).values({
+        ...(submissionId ? {id:submissionId} : {}),
         title: values.title, type: values.type, status: values.status, dueAt: values.dueAt, notes: values.notes,
         ...activityTargetColumns(values.targetType, values.targetId),
         completedAt: completionTime(null, null, values.status, new Date()),
@@ -45,6 +54,8 @@ export async function updateActivity(activityId: string, input: unknown) {
     const id = validate(entityIdSchema, activityId);
     const patch = omitUndefined(validate(updateActivitySchema, input));
     return db.transaction(async (tx) => {
+      await tx.execute(sql`set local statement_timeout='10s'`);
+      await tx.execute(sql`set local lock_timeout='3s'`);
       const [row] = await tx.select().from(activities).where(all(eq(activities.id, id), isNull(activities.deletedAt))).for("update");
       const current = found(row);
       const previousTarget = activityTarget(current);
@@ -85,11 +96,11 @@ export async function listActivities(input: unknown = {}) {
       window.from ? gte(activities.dueAt, window.from) : undefined, window.before ? lt(activities.dueAt, window.before) : undefined,
       type ? eq(activities.type, type) : undefined, targetId ? eq(targetColumn, targetId) : undefined,
       pattern ? or(ilike(activities.title, pattern), ilike(activities.notes, pattern), ilike(contacts.fullName, pattern), ilike(leads.serviceNeeds, pattern), ilike(deals.title, pattern)) : undefined);
-    const rows = await db.select(selection).from(activities).leftJoin(contacts, eq(activities.contactId, contacts.id))
+    const [rows, [total]] = await Promise.all([db.select(selection).from(activities).leftJoin(contacts, eq(activities.contactId, contacts.id))
       .leftJoin(leads, eq(activities.leadId, leads.id)).leftJoin(deals, eq(activities.dealId, deals.id)).where(where)
-      .orderBy(view === "completed" ? desc(activities.completedAt) : asc(activities.dueAt), asc(activities.id)).limit(pageSize).offset((page - 1) * pageSize);
-    const [total] = await db.select({ value: count() }).from(activities).leftJoin(contacts, eq(activities.contactId, contacts.id))
-      .leftJoin(leads, eq(activities.leadId, leads.id)).leftJoin(deals, eq(activities.dealId, deals.id)).where(where);
+      .orderBy(view === "completed" ? desc(activities.completedAt) : asc(activities.dueAt), asc(activities.id)).limit(pageSize).offset((page - 1) * pageSize),
+    db.select({ value: count() }).from(activities).leftJoin(contacts, eq(activities.contactId, contacts.id))
+      .leftJoin(leads, eq(activities.leadId, leads.id)).leftJoin(deals, eq(activities.dealId, deals.id)).where(where)]);
     return { items: rows.map(joined), total: total.value, page, pageSize };
   });
 }

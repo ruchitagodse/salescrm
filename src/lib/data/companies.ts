@@ -16,11 +16,15 @@ async function duplicateWarning(tx: Transaction, name: string, excludeId?: strin
   return match ? ["A company with this name already exists."] : [];
 }
 
-export async function createCompany(input: unknown) {
+export async function createCompany(input: unknown, reuseExisting = false) {
   return withData(async (db) => {
     const values = validate(createCompanySchema, input);
     return db.transaction(async (tx) => {
       const warnings = await duplicateWarning(tx, values.name);
+      if (reuseExisting && warnings.length) {
+        const [existing] = await tx.select().from(companies).where(all(isNull(companies.deletedAt),sql`lower(${companies.name})=lower(${values.name})`)).orderBy(companies.createdAt,companies.id).limit(1);
+        return {company:found(existing),warnings:['Selected the existing company with this name. Its stored details were preserved.']};
+      }
       const [row] = await tx.insert(companies).values({ id: randomUUID(), ...values }).returning();
       return { company: found(row), warnings };
     });

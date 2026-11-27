@@ -1,8 +1,8 @@
 import "server-only";
 import { asc, count, desc, eq, ilike, isNull, or, sql } from "drizzle-orm";
-import { contacts, deals, expenses, leads, orderItems, orders, payments, quotationItems, quotations } from "@/db/schema";
+import { contacts, deals, expenses, leads, orderItems, orders, payments, quotationItems, quotations, quotationHistory } from "@/db/schema";
 import { expenseInputSchema, financeListSchema, paymentInputSchema, quotationInputSchema, quotationStatusSchema, voidInputSchema } from "@/lib/finance-validation";
-import { calculateItems, canChangeQuotation, documentReference, receiptFits } from "@/lib/finance-values";
+import { calculateItems, quotationTotals, canChangeQuotation, documentReference, receiptFits } from "@/lib/finance-values";
 import { entityIdSchema } from "@/lib/validation";
 import { all, DataError, found, searchPattern, validate, withData, type Transaction } from "./shared";
 
@@ -25,32 +25,40 @@ async function paid(tx: Transaction, id: string) {
 export async function financeReady() {
   return withData(async (db) => {
     const [row] = await db.execute<{ ready: boolean }>(sql`select
-      (select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relname in ('quotations','quotation_items','orders','order_items','payments','expenses') and c.relkind='r' and c.relrowsecurity)=6
-      and not exists(select 1 from pg_policies where schemaname='public' and tablename in ('quotations','quotation_items','orders','order_items','payments','expenses')) as ready`);
+      (select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='public' and c.relname in ('quotations','quotation_items','orders','order_items','payments','expenses','quotation_documents','quotation_deliveries','quotation_history') and c.relkind='r' and c.relrowsecurity)=9
+      and not exists(select 1 from pg_policies where schemaname='public' and tablename in ('quotations','quotation_items','orders','order_items','payments','expenses','quotation_documents','quotation_deliveries','quotation_history')) as ready`);
     return row.ready;
   });
 }
-export async function saveQuotation(id: string | null, input: unknown) {
+export async function saveQuotation(id: string | null, input: unknown, submissionId?: string) {
   return withData(async (db) => {
     if (id !== null) validate(entityIdSchema, id);
     const values = validate(quotationInputSchema, input);
     const totals = calculated(values.items);
+    let finalTotal;try{finalTotal=quotationTotals(totals.totalPaise,values.discountPaise,values.taxPaise,values.milestones);}catch{throw new DataError('INVALID_INPUT');}
+    const fields={title:values.title,dealId:values.dealId ?? null,leadId:values.leadId ?? null,notes:values.notes,description:values.description,
+      validUntil:values.validUntil,paymentTerms:values.paymentTerms,discountPaise:values.discountPaise,taxPaise:values.taxPaise,milestones:values.milestones,totalPaise:finalTotal};
     return db.transaction(async (tx) => {
+      if(!id&&submissionId){validate(entityIdSchema,submissionId);await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`quotation-submit:${submissionId}`},0))`);
+        const [existing]=await tx.select().from(quotations).where(eq(quotations.id,submissionId));if(existing){if(existing.deletedAt)throw new DataError('CONFLICT');return {...dto(existing),reference:documentReference('Q',existing.number)};}}
+      const requireTarget=async()=>{if(values.dealId)await liveDeal(tx,values.dealId);
+        else {const [target]=await tx.select({id:leads.id}).from(leads).where(all(eq(leads.id,values.leadId!),isNull(leads.deletedAt))).for('update');if(!target)throw new DataError('INVALID_REFERENCE');}};
       let row: typeof quotations.$inferSelect;
       if (id) {
         const [current] = await tx.select().from(quotations).where(all(eq(quotations.id, id), isNull(quotations.deletedAt))).for("update");
         if (found(current).status !== "draft") throw new DataError("INVALID_STATE");
-        if (current.dealId !== values.dealId) await liveDeal(tx, values.dealId);
-        const [updated] = await tx.update(quotations).set({ title: values.title, dealId: values.dealId, notes: values.notes, totalPaise: totals.totalPaise })
+        if(current.dealId!==(values.dealId??null)||current.leadId!==(values.leadId??null))await requireTarget();
+        const [updated] = await tx.update(quotations).set(fields)
           .where(eq(quotations.id, id)).returning();
         row = found(updated);
         await tx.update(quotationItems).set({ deletedAt: new Date() }).where(all(eq(quotationItems.quotationId, id), isNull(quotationItems.deletedAt)));
       } else {
-        await liveDeal(tx, values.dealId);
-        const [created] = await tx.insert(quotations).values({ title: values.title, dealId: values.dealId, notes: values.notes, totalPaise: totals.totalPaise }).returning();
+        await requireTarget();
+        const [created] = await tx.insert(quotations).values({...fields,...(submissionId?{id:submissionId}:{})}).returning();
         row = found(created);
       }
       await tx.insert(quotationItems).values(totals.lines.map((line) => ({ ...line, quotationId: row.id })));
+      await tx.insert(quotationHistory).values({quotationId:row.id,event:id?'draft_updated':'draft_created'});
       return { ...dto(row), reference: documentReference("Q", row.number) };
     });
   });
@@ -59,12 +67,13 @@ export async function changeQuotationStatus(id: string, status: unknown) {
   return withData(async (db) => {
     validate(entityIdSchema, id);
     const next = validate(quotationStatusSchema, status);
+    if(next==='sent')throw new DataError('INVALID_STATE');
     return db.transaction(async (tx) => {
       const [row] = await tx.select().from(quotations).where(all(eq(quotations.id, id), isNull(quotations.deletedAt))).for("update");
       const current = found(row);
       if (!canChangeQuotation(current.status, next)) throw new DataError("INVALID_STATE");
       const items = await tx.select().from(quotationItems).where(all(eq(quotationItems.quotationId, id), isNull(quotationItems.deletedAt)));
-      if (calculated(items).totalPaise !== current.totalPaise) throw new DataError("INVALID_STATE");
+      if (quotationTotals(calculated(items).totalPaise,current.discountPaise,current.taxPaise,current.milestones) !== current.totalPaise) throw new DataError("INVALID_STATE");
       const [updated] = await tx.update(quotations).set({ status: next }).where(eq(quotations.id, id)).returning();
       return dto(found(updated));
     });
@@ -93,10 +102,10 @@ export async function convertQuotationToOrder(id: string) {
       }
       const items = await tx.select().from(quotationItems).where(all(eq(quotationItems.quotationId, id), isNull(quotationItems.deletedAt))).orderBy(asc(quotationItems.position));
       const snapshot = calculated(items);
-      if (snapshot.totalPaise !== quote.totalPaise) throw new DataError("INVALID_STATE");
-      const [customer] = await tx.select({ name: contacts.fullName }).from(deals).innerJoin(leads, eq(deals.leadId, leads.id))
-        .innerJoin(contacts, eq(leads.contactId, contacts.id)).where(eq(deals.id, quote.dealId));
-      const [order] = await tx.insert(orders).values({ quotationId: id, title: quote.title, customerName: found(customer).name, totalPaise: snapshot.totalPaise, notes: quote.notes }).returning();
+      if (quotationTotals(snapshot.totalPaise,quote.discountPaise,quote.taxPaise,quote.milestones) !== quote.totalPaise) throw new DataError("INVALID_STATE");
+      const [customer] = await tx.select({ name: contacts.fullName }).from(leads).innerJoin(contacts, eq(leads.contactId, contacts.id))
+        .leftJoin(deals,eq(deals.leadId,leads.id)).where(quote.dealId?eq(deals.id,quote.dealId):eq(leads.id,quote.leadId!));
+      const [order] = await tx.insert(orders).values({ quotationId: id, title: quote.title, customerName: found(customer).name, totalPaise: quote.totalPaise,discountPaise:quote.discountPaise,taxPaise:quote.taxPaise, notes: quote.notes }).returning();
       await tx.insert(orderItems).values(snapshot.lines.map((line) => ({ description: line.description, quantity: line.quantity, unitPricePaise: line.unitPricePaise, lineTotalPaise: line.lineTotalPaise, position: line.position, orderId: order.id })));
       return { ...dto(order), reference: documentReference("O", order.number) };
     });

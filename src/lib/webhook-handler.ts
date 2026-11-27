@@ -5,6 +5,7 @@ type Dependencies = {
   config:()=>{secret:string;verifyToken:string;accountId:string};
   store:(events:InboundEvent[])=>Promise<{id:string;state:string;errorCode:string|null}[]>;
   process:(id:string)=>Promise<{processed:boolean;retryable:boolean}>;
+  statuses?:(payload:unknown,accountId:string)=>Promise<void>;
 };
 // The real route uses this boundary; injectable dependencies keep tests offline.
 export function createWebhookHandlers(channel:Channel,deps:Dependencies){return {
@@ -18,8 +19,9 @@ export function createWebhookHandlers(channel:Channel,deps:Dependencies){return 
     let config;try{config=deps.config();}catch{return reply(503,'Unavailable');}
     let raw;try{raw=await boundedBody(request);}catch(error){return reply(error instanceof RangeError?413:400,'Invalid request');}
     if(!validSignature(raw,request.headers.get('x-hub-signature-256'),config.secret))return reply(401,'Unauthorized');
-    let events;try{events=parseInbound(channel,JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(raw)),config.accountId);}catch{return reply(400,'Invalid request');}
+    let events,payload:unknown;try{payload=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(raw));events=parseInbound(channel,payload,config.accountId);}catch{return reply(400,'Invalid request');}
     try{
+      await deps.statuses?.(payload,config.accountId);
       const saved=await deps.store(events);
       const pending=saved.filter(e=>e.state==='received'||(e.state==='needs_review'&&['GRAPH_UNAVAILABLE','RETRY','DATABASE_ERROR','PROCESSING_FAILED'].includes(e.errorCode ?? '')));
       pending.sort((a,b)=>Number(b.state==='received')-Number(a.state==='received'));
